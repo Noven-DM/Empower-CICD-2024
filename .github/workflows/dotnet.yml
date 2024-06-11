@@ -26,3 +26,30 @@ jobs:
       run: dotnet build --no-restore
     - name: Test
       run: dotnet test --no-build --verbosity normal
+          # Install the Validator .NET tool so we can check the connector solution for mistakes.
+    - name: Install Connector Validator
+      run: dotnet tool install -g Skyline.DataMiner.CICD.Tools.Validator
+
+    # Run the Validator .NET tool. We give the workspace as an input so that the tool can find the solution file. The output will be the results in the form of JSON and HTML.
+    - name: Run Connector Validator
+      run: dataminer-validator validate-protocol-solution --solution-path "${{ github.workspace }}" --output-directory "${{ github.workspace }}" --output-file-name "validateResults" 
+
+    # Archive the results so that they are accesible via the UI.
+    - name: Archive Results
+      if: success()
+      uses: actions/upload-artifact@v4
+      with:
+        name: validateResults
+        path: ${{ github.workspace }}/validateResults.*
+
+    # Read out the validator results and define the quality thresholds. Based on the thresholds, this step will succeed or fail.
+    - name: Quality Gate
+      run: |
+        json=$(cat "${{ github.workspace }}/validateResults.json")
+        critical=$(echo "$json" | jq -r '.CriticalIssueCount')
+        major=$(echo "$json" | jq -r '.MajorIssueCount')
+
+        if [ "$critical" != "0" ] || [ "$major" != "0" ]; then
+          echo "Error: CriticalIssueCount or MajorIssueCount is not 0"
+          exit 1
+        fi
